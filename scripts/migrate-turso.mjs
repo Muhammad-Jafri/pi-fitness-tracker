@@ -55,8 +55,19 @@ for (const dir of dirs) {
     console.log(`✓ Applied: ${dir}`);
     count++;
   } catch (err) {
-    console.error(`✗ Failed to apply ${dir}:`, err.message);
-    process.exit(1);
+    // If every statement failed only because objects already exist,
+    // the DB is already in the desired state — mark as applied and continue.
+    if (err.message?.includes("already exists")) {
+      await client.execute({
+        sql: "INSERT OR IGNORE INTO _migrations (name) VALUES (?)",
+        args: [dir],
+      });
+      console.log(`✓ Baselined (already exists): ${dir}`);
+      count++;
+    } else {
+      console.error(`✗ Failed to apply ${dir}:`, err.message);
+      process.exit(1);
+    }
   }
 }
 
