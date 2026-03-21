@@ -6,6 +6,7 @@ const UpdateSetSchema = z.object({
   exerciseId: z.string(),
   setNumber: z.number().int().positive(),
   reps: z.number().int().positive(),
+  weight: z.number().positive().nullable().optional(),
 });
 
 const UpdateWorkoutSchema = z.object({
@@ -55,6 +56,7 @@ export async function PUT(
           exerciseId: s.exerciseId,
           setNumber: s.setNumber,
           reps: s.reps,
+          weight: s.weight ?? null,
         })),
       },
     },

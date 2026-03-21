@@ -23,6 +23,7 @@ import type { Exercise, WorkoutSession } from "@/types";
 const SetSchema = z.object({
   exerciseId: z.string().min(1, "Pick an exercise"),
   reps: z.coerce.number().int().positive("Must be > 0"),
+  weight: z.union([z.coerce.number().positive(), z.literal("")]).optional(),
 });
 
 const FormSchema = z.object({
@@ -44,7 +45,7 @@ export function EditSessionModal({ session, onOpenChange, onSaved }: Props) {
   const { register, control, handleSubmit, reset, setValue, watch, formState: { errors } } =
     useForm<FormValues, unknown, FormValues>({
       resolver: zodResolver(FormSchema) as never,
-      defaultValues: { sets: [{ exerciseId: "", reps: 10 }] },
+      defaultValues: { sets: [{ exerciseId: "", reps: 10, weight: "" }] },
     });
 
   const { fields, append, remove } = useFieldArray({ control, name: "sets" });
@@ -62,6 +63,7 @@ export function EditSessionModal({ session, onOpenChange, onSaved }: Props) {
       sets: session.sets.map((s) => ({
         exerciseId: s.exerciseId,
         reps: s.reps,
+        weight: s.weight ?? "",
       })),
     });
   }, [session, reset]);
@@ -71,7 +73,9 @@ export function EditSessionModal({ session, onOpenChange, onSaved }: Props) {
     setSaving(true);
     try {
       const setsWithNumber = values.sets.map((s, i) => ({
-        ...s,
+        exerciseId: s.exerciseId,
+        reps: s.reps,
+        weight: s.weight !== "" && s.weight !== undefined ? Number(s.weight) : null,
         setNumber: i + 1,
       }));
       await fetch(`/api/workouts/${session.id}`, {
@@ -123,6 +127,14 @@ export function EditSessionModal({ session, onOpenChange, onSaved }: Props) {
                   placeholder="Reps"
                   className="w-16 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-center"
                 />
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  {...register(`sets.${index}.weight`)}
+                  placeholder="kg"
+                  className="w-16 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-center"
+                />
                 {fields.length > 1 && (
                   <button
                     type="button"
@@ -143,7 +155,7 @@ export function EditSessionModal({ session, onOpenChange, onSaved }: Props) {
             variant="outline"
             size="sm"
             className="w-full"
-            onClick={() => append({ exerciseId: "", reps: 10 })}
+            onClick={() => append({ exerciseId: "", reps: 10, weight: "" })}
           >
             + Add Set
           </Button>

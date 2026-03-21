@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
+export const dynamic = "force-dynamic";
+
 const CreateExerciseSchema = z.object({
   name: z.string().min(1),
   category: z.enum(["upper", "lower", "core"]),

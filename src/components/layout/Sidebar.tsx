@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ListChecks, BarChart2 } from "lucide-react";
+import { LayoutDashboard, ListChecks, BarChart2, Dumbbell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutButton } from "./LogoutButton";
 
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workouts", label: "Workouts", icon: ListChecks },
   { href: "/exercises", label: "Exercises", icon: BarChart2 },
+  { href: "/exercises/manage", label: "Library", icon: Dumbbell },
 ];
 
 export function Sidebar() {

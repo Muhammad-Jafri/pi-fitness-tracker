@@ -1,13 +1,12 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
-import path from "path";
 
+// Migration CLI always uses local SQLite (DATABASE_URL).
+// Turso is handled at runtime via db.ts based on ENVIRONMENT.
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations" },
   datasource: {
-    url: process.env.TURSO_DATABASE_URL
-      ? process.env.TURSO_DATABASE_URL
-      : `file:${path.resolve("./prisma/dev.db")}`,
+    url: process.env.DATABASE_URL!,
   },
 });

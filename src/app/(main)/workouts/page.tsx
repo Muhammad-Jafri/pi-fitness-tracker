@@ -171,6 +171,9 @@ export default function WorkoutsPage() {
                           <div key={s.id} className="bg-muted rounded-md px-3 py-1.5 text-sm">
                             <span className="text-muted-foreground text-xs">Set {s.setNumber} </span>
                             <span className="font-medium">{s.reps} reps</span>
+                            {s.weight != null && (
+                              <span className="text-muted-foreground"> @ {s.weight}kg</span>
+                            )}
                           </div>
                         ))}
                       </div>

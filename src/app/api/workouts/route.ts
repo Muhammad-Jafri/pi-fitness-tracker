@@ -6,6 +6,7 @@ const CreateSetSchema = z.object({
   exerciseId: z.string(),
   setNumber: z.number().int().positive(),
   reps: z.number().int().positive(),
+  weight: z.number().positive().nullable().optional(),
 });
 
 const CreateWorkoutSchema = z.object({
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
           exerciseId: s.exerciseId,
           setNumber: s.setNumber,
           reps: s.reps,
+          weight: s.weight ?? null,
         })),
       },
     },

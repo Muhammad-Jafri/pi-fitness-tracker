@@ -4,17 +4,15 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 import path from "path";
 
 function createPrismaClient() {
-  if (process.env.TURSO_DATABASE_URL) {
-    // Production: Turso (libsql)
+  if (process.env.ENVIRONMENT === "prod") {
     return new PrismaClient({
       adapter: new PrismaLibSql({
-        url: process.env.TURSO_DATABASE_URL,
+        url: process.env.TURSO_DATABASE_URL!,
         authToken: process.env.TURSO_AUTH_TOKEN,
       }),
     });
   }
 
-  // Local: SQLite file
   const dbPath = path.join(process.cwd(), "prisma", "dev.db");
   return new PrismaClient({
     adapter: new PrismaBetterSqlite3({ url: `file:${dbPath}` }),
