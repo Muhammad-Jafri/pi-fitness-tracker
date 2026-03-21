@@ -147,10 +147,14 @@ Both modals use react-hook-form with `useFieldArray` for dynamic sets. Each set 
 
 ```bash
 npm run dev         # Start Next.js dev server
-npm run build       # prisma generate && next build
+npm run build       # prisma generate + migrate-turso + next build (runs ESLint)
 npx prisma studio   # DB GUI
 npx ts-node prisma/seed.ts  # Seed local SQLite
 ```
+
+## Pre-commit Rule — Always run `npm run build` before committing
+
+`npx tsc --noEmit` does NOT catch ESLint errors. `next build` runs ESLint as part of compilation and will fail on lint errors that tsc misses (e.g. `react-hooks/set-state-in-effect`). Always run `npm run build` locally and confirm it passes before committing and pushing to avoid breaking production.
 
 ## Deployment
 
