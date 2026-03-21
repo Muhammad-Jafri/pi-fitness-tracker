@@ -1,5 +1,9 @@
 # Pi Fitness Tracker — Codebase Guide
 
+> **For AI agents:** When anything is unclear — architecture, where logic lives, feature scope, planned work — check `docs/` before asking or guessing:
+> - `docs/code-structure.md` — precise map of every file, route, component, and invariant
+> - `docs/designs/saas-transformation.md` — Phase 3 SaaS vision, accepted scope, schema changes
+
 ## Stack
 - **Frontend:** Next.js 15, React 19, Tailwind CSS 4, shadcn/ui
 - **Backend:** Next.js API routes, Prisma 7 (adapter-based), SQLite (dev) / Turso libsql (prod)
