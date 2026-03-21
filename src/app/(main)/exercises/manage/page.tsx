@@ -44,12 +44,17 @@ export default function ExerciseLibraryPage() {
   const [deleteTarget, setDeleteTarget] = useState<Exercise | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function refresh() {
-    const data = await fetch("/api/exercises").then((r) => r.json());
-    setExercises(data);
+  function refresh() {
+    fetch("/api/exercises")
+      .then((r) => r.json())
+      .then((data: Exercise[]) => setExercises(data));
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    fetch("/api/exercises")
+      .then((r) => r.json())
+      .then((data: Exercise[]) => setExercises(data));
+  }, []);
 
   const grouped = CATEGORIES.reduce<Record<ExerciseCategory, Exercise[]>>(
     (acc, cat) => {
