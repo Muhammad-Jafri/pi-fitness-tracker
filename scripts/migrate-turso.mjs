@@ -46,29 +46,37 @@ for (const dir of dirs) {
 
   const sql = readFileSync(sqlPath, "utf8");
 
-  try {
-    await client.executeMultiple(sql);
-    await client.execute({
-      sql: "INSERT INTO _migrations (name) VALUES (?)",
-      args: [dir],
-    });
-    console.log(`✓ Applied: ${dir}`);
-    count++;
-  } catch (err) {
-    // If every statement failed only because objects already exist,
-    // the DB is already in the desired state — mark as applied and continue.
-    if (err.message?.includes("already exists")) {
-      await client.execute({
-        sql: "INSERT OR IGNORE INTO _migrations (name) VALUES (?)",
-        args: [dir],
-      });
-      console.log(`✓ Baselined (already exists): ${dir}`);
-      count++;
-    } else {
-      console.error(`✗ Failed to apply ${dir}:`, err.message);
-      process.exit(1);
+  // Run each statement individually so "already exists" skips only that
+  // statement rather than silently swallowing the entire migration file.
+  const statements = sql
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let failed = false;
+  for (const stmt of statements) {
+    try {
+      await client.execute(stmt);
+    } catch (err) {
+      if (err.message?.includes("already exists") || err.message?.includes("duplicate column")) {
+        console.log(`  ↷ Skipped (already exists): ${stmt.slice(0, 60)}…`);
+      } else {
+        console.error(`✗ Failed in ${dir}:`, err.message);
+        console.error(`  Statement: ${stmt}`);
+        failed = true;
+        break;
+      }
     }
   }
+
+  if (failed) process.exit(1);
+
+  await client.execute({
+    sql: "INSERT OR IGNORE INTO _migrations (name) VALUES (?)",
+    args: [dir],
+  });
+  console.log(`✓ Applied: ${dir}`);
+  count++;
 }
 
 console.log(count === 0 ? "No pending migrations." : `${count} migration(s) applied.`);
