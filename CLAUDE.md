@@ -6,7 +6,7 @@
 
 ## Stack
 - **Frontend:** Next.js 15, React 19, Tailwind CSS 4, shadcn/ui
-- **Backend:** Next.js API routes, Prisma 7 (adapter-based), SQLite (dev) / Turso libsql (prod)
+- **Backend:** Next.js API routes, Prisma 7 (adapter-based), Neon Postgres (dev + prod)
 - **Auth:** JWT via `jose`, httpOnly cookies, Next.js middleware
 - **Forms:** react-hook-form + Zod
 - **Charts:** Recharts
@@ -17,8 +17,9 @@
 ## Phase Status
 
 - **Phase 1 (shipped):** Basic workout logging, exercise analytics, single-user JWT auth, Turso prod DB
-- **Phase 2 (shipped):** Custom exercise CRUD (add/edit/delete), weight-per-set tracking, Library page (`/exercises/manage`), ENVIRONMENT-based DB switching, automated Turso migration script
-- **Phase 3 (planned):** Multi-user auth (Auth.js v5), Postgres (Neon), AI insights (Claude API), workout templates, body weight tracking, shareable PR cards — see `docs/designs/saas-transformation.md`
+- **Phase 2 (shipped):** Custom exercise CRUD (add/edit/delete), weight-per-set tracking, Library page (`/exercises/manage`)
+- **Phase 2.5 (shipped):** Migrated from Turso/SQLite to Neon Postgres — single DATABASE_URL for CLI and runtime, standard `prisma migrate deploy` on every deploy
+- **Phase 3 (planned):** Multi-user auth (Auth.js v5), AI insights (Claude API), workout templates, body weight tracking, shareable PR cards — see `docs/designs/saas-transformation.md`
 
 ## Directory Structure
 
@@ -51,19 +52,16 @@ src/
       LogoutButton.tsx
     ui/                   # shadcn/ui primitives
   lib/
-    db.ts                 # Prisma singleton — switches on ENVIRONMENT=prod (Turso) vs dev (SQLite)
+    db.ts                 # Prisma singleton — PrismaNeon adapter using DATABASE_URL
     session.ts            # createSession / deleteSession / verifySession
     utils.ts              # cn()
   types/index.ts          # Shared TS interfaces (Exercise, WorkoutSession, WorkoutSet w/ weight)
   middleware.ts           # JWT auth check, redirects to /login or returns 401
   generated/prisma/       # Auto-generated Prisma client (never edit)
 prisma/
-  schema.prisma           # Source of truth — WorkoutSet now has weight Float?
-  migrations/             # Applied via scripts/migrate-turso.mjs at Vercel build time
-  seed.ts                 # Seeds 12 built-in exercises (SQLite)
-  seed-turso.ts           # Same seed for Turso
-scripts/
-  migrate-turso.mjs       # Runs at build time — applies pending prisma/migrations/ to Turso
+  schema.prisma           # Source of truth — provider = postgresql, WorkoutSet has weight Float?
+  migrations/             # Applied via `prisma migrate deploy` at Vercel build time
+  seed.ts                 # Seeds 12 built-in exercises (run against Neon)
 docs/
   designs/
     saas-transformation.md  # Phase 3 SaaS vision + architecture (CEO plan)
@@ -112,10 +110,10 @@ Prisma 7 does NOT accept `url` in `schema.prisma` datasource. DB URL lives in `p
 
 ## DB Client (src/lib/db.ts)
 
-- `ENVIRONMENT=prod` → uses PrismaLibSql with `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`
-- `ENVIRONMENT=dev` (or unset) → uses PrismaBetterSqlite3 with `prisma/dev.db`
+- Uses `PrismaNeon` adapter (`@prisma/adapter-neon`) with `@neondatabase/serverless` Pool
+- `DATABASE_URL` is the single source — same value for Prisma CLI and runtime
 - Singleton pattern to avoid multiple instantiations in Next.js dev mode
-- **Never** check for `TURSO_DATABASE_URL` presence to decide adapter — always use `ENVIRONMENT`
+- Always use the **pooled** connection string from Neon (`-pooler` suffix in the hostname) — required for serverless/Vercel
 
 ## API Routes Summary
 
@@ -139,16 +137,13 @@ Prisma 7 does NOT accept `url` in `schema.prisma` datasource. DB URL lives in `p
 ## Environment Variables
 
 ```
-ENVIRONMENT=dev           # "dev" = SQLite, "prod" = Turso (set to "prod" in Vercel)
-DATABASE_URL=file:./prisma/dev.db  # SQLite path — used by Prisma CLI only
+DATABASE_URL=postgresql://user:pass@host-pooler.neon.tech/neondb?sslmode=require
 AUTH_USERNAME=
 AUTH_PASSWORD=
 SESSION_SECRET=           # long random string
-TURSO_DATABASE_URL=       # production only (libsql://... URL)
-TURSO_AUTH_TOKEN=         # production only
 ```
 
-**Prisma CLI vs runtime:** `prisma.config.ts` uses `DATABASE_URL` (SQLite) for CLI commands (`prisma migrate dev`, `prisma studio`). Runtime adapter is chosen by `ENVIRONMENT` in `src/lib/db.ts` — Turso is never touched by the CLI.
+**Single DATABASE_URL for everything:** `prisma.config.ts` and `src/lib/db.ts` both read `DATABASE_URL`. No environment branching. Always use the Neon **pooled** connection string (hostname contains `-pooler`).
 
 ## Key Patterns
 
@@ -177,34 +172,25 @@ Any API GET route that has no dynamic path params must export `export const dyna
 ## Dev Commands
 
 ```bash
-npm run dev         # Start Next.js dev server
-npm run build       # prisma generate + migrate-turso + next build (runs ESLint)
-npx prisma studio   # DB GUI
-npx ts-node prisma/seed.ts  # Seed local SQLite
+npm run dev                    # Start Next.js dev server
+npm run build                  # prisma generate + migrate deploy + next build (runs ESLint)
+npx prisma studio              # DB GUI (connects to Neon via DATABASE_URL)
+npx tsx prisma/seed.ts         # Seed Neon with 12 built-in exercises
+npx prisma migrate dev --name <desc>  # Create a new migration (generates Postgres SQL)
 ```
 
 ## Pre-commit Rule — Always run `npm run build` before committing
 
 `npx tsc --noEmit` does NOT catch ESLint errors. `next build` runs ESLint as part of compilation and will fail on lint errors that tsc misses (e.g. `react-hooks/set-state-in-effect`). Always run `npm run build` locally and confirm it passes before committing and pushing to avoid breaking production.
 
-## Turso Migrations
+## Migrations
 
-`scripts/migrate-turso.mjs` runs automatically during `npm run build` (and therefore on every Vercel deploy):
+`prisma migrate deploy` runs automatically during `npm run build` (and therefore on every Vercel deploy). It applies any pending migrations in `prisma/migrations/` to Neon using the standard Prisma migration runner.
 
-1. Reads all dirs in `prisma/migrations/` in alphabetical (chronological) order
-2. Checks a `_migrations` table in Turso to find which are already applied
-3. For each pending migration, runs each SQL statement individually (not as a batch)
-4. Skips statements that fail with "already exists" or "duplicate column" — continues rest
-5. On full failure, exits 1 and aborts the build
-6. Records applied migration name in `_migrations`
-
-**Adding a new migration:** Run `npx prisma migrate dev --name <desc>` locally (SQLite). This creates a new dir in `prisma/migrations/`. Commit it. The next Vercel deploy applies it to Turso automatically.
-
-**Never** run `npx prisma migrate deploy` in production — it doesn't understand the Turso adapter. Use the script.
+**Adding a new migration:** Run `npx prisma migrate dev --name <desc>` locally. This creates a new dir in `prisma/migrations/` with Postgres-compatible SQL. Commit it. The next Vercel deploy applies it automatically.
 
 ## Deployment
 
 - Branch `main` → Vercel production deploy (auto CI/CD)
-- Vercel env: `ENVIRONMENT=prod`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `AUTH_USERNAME`, `AUTH_PASSWORD`, `SESSION_SECRET`
-- Build command: `prisma generate && node scripts/migrate-turso.mjs && next build`
-- Vercel uses Turso as production DB; `DATABASE_URL` is not needed in Vercel
+- Vercel env: `DATABASE_URL` (Neon pooled connection string), `AUTH_USERNAME`, `AUTH_PASSWORD`, `SESSION_SECRET`
+- Build command: `prisma generate && prisma migrate deploy && next build`

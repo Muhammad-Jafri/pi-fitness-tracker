@@ -1,1 +1,1 @@
-ALTER TABLE "WorkoutSet" ADD COLUMN "weight" REAL;
+ALTER TABLE "WorkoutSet" ADD COLUMN "weight" DOUBLE PRECISION;
