@@ -7,7 +7,7 @@
 ## Stack
 - **Frontend:** Next.js 15, React 19, Tailwind CSS 4, shadcn/ui
 - **Backend:** Next.js API routes, Prisma 7 (adapter-based), Neon Postgres (dev + prod)
-- **Auth:** JWT via `jose`, httpOnly cookies, Next.js middleware
+- **Auth:** Auth.js v5 (next-auth@beta), Prisma adapter, JWT session strategy, Credentials + Google OAuth providers
 - **Forms:** react-hook-form + Zod
 - **Charts:** Recharts
 - **Icons:** lucide-react
@@ -19,7 +19,7 @@
 - **Phase 1 (shipped):** Basic workout logging, exercise analytics, single-user JWT auth, Turso prod DB
 - **Phase 2 (shipped):** Custom exercise CRUD (add/edit/delete), weight-per-set tracking, Library page (`/exercises/manage`)
 - **Phase 2.5 (shipped):** Migrated from Turso/SQLite to Neon Postgres — single DATABASE_URL for CLI and runtime, standard `prisma migrate deploy` on every deploy
-- **Phase 3 (planned):** Multi-user auth (Auth.js v5), AI insights (Claude API), workout templates, body weight tracking, shareable PR cards — see `docs/designs/saas-transformation.md`
+- **Phase 3 (in progress):** Multi-user auth ✅ (Auth.js v5, Credentials + Google, userId scoping on all routes), AI insights (Claude API), workout templates, body weight tracking, shareable PR cards — see `docs/designs/saas-transformation.md`
 
 ## Directory Structure
 
@@ -38,9 +38,10 @@ src/
       exercises/route.ts          # GET all (force-dynamic), POST create custom
       exercises/[id]/route.ts     # PUT edit, DELETE (custom only; cascades sets)
       analytics/[exerciseId]/route.ts  # GET day/week/month analytics
-      auth/login/route.ts         # POST login
-      auth/logout/route.ts        # POST logout
-    login/page.tsx
+      auth/[...nextauth]/route.ts  # Auth.js handlers (GET + POST)
+      auth/register/route.ts      # POST — create account (email/password)
+    login/page.tsx        # Email + password + Google OAuth sign-in
+    register/page.tsx     # New account registration
     layout.tsx            # Root layout
     globals.css
   components/
@@ -53,10 +54,13 @@ src/
     ui/                   # shadcn/ui primitives
   lib/
     db.ts                 # Prisma singleton — PrismaNeon adapter using DATABASE_URL
-    session.ts            # createSession / deleteSession / verifySession
     utils.ts              # cn()
-  types/index.ts          # Shared TS interfaces (Exercise, WorkoutSession, WorkoutSet w/ weight)
-  middleware.ts           # JWT auth check, redirects to /login or returns 401
+  types/
+    index.ts              # Shared TS interfaces (Exercise, WorkoutSession, WorkoutSet w/ weight)
+    next-auth.d.ts        # Augments Session type to include user.id
+  auth.ts                 # Full Auth.js config — Prisma adapter, Credentials + Google providers (Node.js runtime only)
+  auth.config.ts          # Edge-compatible Auth.js config — used by middleware (no Prisma imports)
+  middleware.ts           # Auth.js middleware — uses auth.config.ts to avoid Node.js in Edge runtime
   generated/prisma/       # Auto-generated Prisma client (never edit)
 prisma/
   schema.prisma           # Source of truth — provider = postgresql, WorkoutSet has weight Float?
@@ -124,23 +128,27 @@ Prisma 7 does NOT accept `url` in `schema.prisma` datasource. DB URL lives in `p
 | `/api/exercises` | GET, POST | `force-dynamic`; POST sets isCustom: true |
 | `/api/exercises/[id]` | PUT, DELETE | PUT edits name/category; DELETE returns 403 if built-in, cascades sets |
 | `/api/analytics/[exerciseId]` | GET | `?filter=day\|week\|month` |
-| `/api/auth/login` | POST | Validates against AUTH_USERNAME/AUTH_PASSWORD env vars |
-| `/api/auth/logout` | POST | Deletes session cookie |
+| `/api/auth/[...nextauth]` | GET, POST | Auth.js handlers (sign in, sign out, OAuth callbacks) |
+| `/api/auth/register` | POST | Create account — validates, hashes password, creates User |
 
 ## Auth
 
-- Single-user: credentials from `AUTH_USERNAME` + `AUTH_PASSWORD` env vars
-- JWT signed with `SESSION_SECRET`, 30-day expiry, httpOnly cookie
-- Middleware protects everything except `/login` and `/api/auth/login`
-- API routes get 401, page routes get redirect to /login
+- **Auth.js v5** (`next-auth@beta`) with Prisma adapter and JWT session strategy
+- **Providers:** Credentials (email + bcrypt password) and Google OAuth
+- **Registration:** `POST /api/auth/register` — validates, hashes password (bcrypt cost 12), creates User
+- **Session:** JWT with `userId` embedded in token and session. Access via `auth()` in server components/routes
+- **Middleware split:** `src/auth.config.ts` (edge-compatible, no Prisma) used by middleware; `src/auth.ts` (full config, Node.js only) used by API routes
+- **Protected routes:** all paths except `/login`, `/register`, `/api/auth/*`
+- **userId scoping:** every data API route calls `auth()` and filters all queries by `session.user.id`
+- **Exercises:** `isCustom: false` (built-ins, `userId: null`) visible to all users; `isCustom: true` scoped to owner's `userId`
 
 ## Environment Variables
 
 ```
 DATABASE_URL=postgresql://user:pass@host-pooler.neon.tech/neondb?sslmode=require
-AUTH_USERNAME=
-AUTH_PASSWORD=
-SESSION_SECRET=           # long random string
+AUTH_SECRET=           # long random string — generate: openssl rand -base64 32
+GOOGLE_CLIENT_ID=      # optional — leave blank to disable Google sign-in
+GOOGLE_CLIENT_SECRET=  # optional
 ```
 
 **Single DATABASE_URL for everything:** `prisma.config.ts` and `src/lib/db.ts` both read `DATABASE_URL`. No environment branching. Always use the Neon **pooled** connection string (hostname contains `-pooler`).
@@ -188,6 +196,14 @@ npx prisma migrate dev --name <desc>  # Create a new migration (generates Postgr
 `prisma migrate deploy` runs automatically during `npm run build` (and therefore on every Vercel deploy). It applies any pending migrations in `prisma/migrations/` to Neon using the standard Prisma migration runner.
 
 **Adding a new migration:** Run `npx prisma migrate dev --name <desc>` locally. This creates a new dir in `prisma/migrations/` with Postgres-compatible SQL. Commit it. The next Vercel deploy applies it automatically.
+
+## Branching Strategy
+
+- `main` → production (Vercel auto-deploys on merge)
+- `dev` → integration branch, always the base for new work
+- Feature branches → cut from `dev`, named `feature/<desc>` (e.g. `feature/multi-user-auth`)
+- **Workflow:** `feature/*` → PR → `dev` → PR → `main`
+- Never commit directly to `dev` or `main`
 
 ## Deployment
 

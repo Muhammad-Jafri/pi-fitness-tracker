@@ -2,6 +2,7 @@
 
 > Generated via CEO plan review on 2026-03-21
 > Mode: SCOPE EXPANSION | Branch: dev
+> Last updated: 2026-03-28
 
 ---
 
@@ -30,14 +31,14 @@ A user logs 3 sets in 20 seconds after a workout. The app immediately tells them
 | 4 | AI-generated insights (Claude API) | M | ✅ ACCEPTED |
 | 5 | Shareable PR cards (@vercel/og) | S | ✅ ACCEPTED |
 | 6 | Body weight tracking | S | ✅ ACCEPTED |
-| 7 | Postgres migration (Neon/Supabase) | L | ✅ ACCEPTED |
+| 7 | Postgres migration (Neon/Supabase) | L | ✅ SHIPPED (2026-03-28) |
 
 ---
 
 ## Priority Build Order
 
-1. **Postgres** — foundation, everything else builds on this
-2. **Multi-user auth** — Auth.js v5, unblocks all other features
+1. ~~**Postgres** — foundation, everything else builds on this~~ ✅ SHIPPED (Neon, 2026-03-28)
+2. **Multi-user auth** — Auth.js v5, unblocks all other features — **NEXT**
 3. **userId scoping on all API routes** — security critical, do immediately after auth
 4. **Body weight tracking** — quick win, S effort
 5. **Workout templates** — high retention impact, S effort
@@ -221,7 +222,7 @@ Session saved
 
 ---
 
-## Postgres Migration Sequence
+## Postgres Migration Sequence ✅ COMPLETE
 
 ```
 1. Provision Neon/Supabase Postgres

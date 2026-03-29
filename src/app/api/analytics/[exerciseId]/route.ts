@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import type { AnalyticsDataPoint } from "@/types";
 
@@ -8,9 +9,15 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ exerciseId: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { exerciseId } = await params;
   const { searchParams } = new URL(request.url);
   const filter = searchParams.get("filter") ?? "week";
+  const userId = session.user.id;
 
   const now = new Date();
 
@@ -27,16 +34,15 @@ export async function GET(
     const sets = await prisma.workoutSet.findMany({
       where: {
         exerciseId,
-        session: { date: { gte: monday, lte: sunday } },
+        session: { userId, date: { gte: monday, lte: sunday } },
       },
       include: { session: true },
     });
 
-    // Aggregate: Mon=1 … Sun=0, map to Mon–Sun (index 0–6)
     const totals = [0, 0, 0, 0, 0, 0, 0]; // Mon=0 … Sun=6
     for (const s of sets) {
-      const jsDay = new Date(s.session.date).getDay(); // 0=Sun,1=Mon…6=Sat
-      const idx = (jsDay + 6) % 7; // Mon=0…Sun=6
+      const jsDay = new Date(s.session.date).getDay();
+      const idx = (jsDay + 6) % 7;
       totals[idx] += s.reps;
     }
 
@@ -47,21 +53,20 @@ export async function GET(
   }
 
   if (filter === "month") {
-    // Jan–Dec of current year
     const yearStart = new Date(now.getFullYear(), 0, 1);
     const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
 
     const sets = await prisma.workoutSet.findMany({
       where: {
         exerciseId,
-        session: { date: { gte: yearStart, lte: yearEnd } },
+        session: { userId, date: { gte: yearStart, lte: yearEnd } },
       },
       include: { session: true },
     });
 
     const totals = new Array(12).fill(0);
     for (const s of sets) {
-      const month = new Date(s.session.date).getMonth(); // 0–11
+      const month = new Date(s.session.date).getMonth();
       totals[month] += s.reps;
     }
 
@@ -72,7 +77,7 @@ export async function GET(
     return NextResponse.json(data);
   }
 
-  // day: today's sets grouped by session
+  // day: today's sets for this user
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(now);
@@ -81,7 +86,7 @@ export async function GET(
   const sets = await prisma.workoutSet.findMany({
     where: {
       exerciseId,
-      session: { date: { gte: todayStart, lte: todayEnd } },
+      session: { userId, date: { gte: todayStart, lte: todayEnd } },
     },
     include: { session: true },
     orderBy: { setNumber: "asc" },

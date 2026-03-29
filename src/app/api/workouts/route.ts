@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
 
@@ -16,7 +17,13 @@ const CreateWorkoutSchema = z.object({
 });
 
 export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const sessions = await prisma.workoutSession.findMany({
+    where: { userId: session.user.id },
     orderBy: { date: "desc" },
     include: {
       sets: {
@@ -29,6 +36,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json();
   const parsed = CreateWorkoutSchema.safeParse(body);
 
@@ -38,8 +50,9 @@ export async function POST(request: Request) {
 
   const { date, notes, sets } = parsed.data;
 
-  const session = await prisma.workoutSession.create({
+  const workoutSession = await prisma.workoutSession.create({
     data: {
+      userId: session.user.id,
       date: date ? new Date(date) : new Date(),
       notes,
       sets: {
@@ -56,5 +69,5 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json(session, { status: 201 });
+  return NextResponse.json(workoutSession, { status: 201 });
 }
